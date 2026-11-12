@@ -292,10 +292,13 @@ const QA = LOCAL ? '/bff-qa' : 'https://qa-gateway.naturisa.com.ec/bff';
 const AUTH_URL = (LOCAL ? QA : WORKER + '/bff-qa') + '/web/ap1/security/api/auth';
 const TANQUES_URL = QA + '/web/datamaestra/backoffice/api/structure/fuel_tanks?status=ACTIVO&status=MANTENIMIENTO' +
   '&includeUsage=true&includeSubsidiary=true&includeWarehouse=true&includeUnitMeasure=true&includeItem=true&PageSize=1000';
-// El token tiene que ser de la aplicación Data Maestra (su propio front usa este código); con el de
-// AP1 Balanceado el login responde "Usuario o clave incorrecto" aunque usuario y clave esten bien.
-const CODE_APP_DM = 'd06297ed-eb64-4d15-a0a3-35befce8f34a';
-const CODE_APP_AP1 = '55ab9cb4-c887-4f42-98ec-b90470be6613';
+// Data Maestra tiene su propio login (otra ruta y otro codigo de aplicacion que AP1 Balanceado);
+// con los de AP1 responde "Usuario o clave incorrecto" aunque usuario y clave esten bien.
+// Esa ruta si manda cabecera CORS, asi que desde la web se le pide directo; la de AP1 va por el worker.
+const APPS = [
+  { nombre: 'Data Maestra', url: QA + '/web/datamaestra/security/api/auth', code: 'd06297ed-eb64-4d15-a0a3-35befce8f34a' },
+  { nombre: 'AP1 Balanceado', url: AUTH_URL, code: '55ab9cb4-c887-4f42-98ec-b90470be6613' },
+];
 // Clusters de /db/sucursales que no son granjas
 const NO_GRANJA = ['Acopio', 'Oficina'];
 // Clusters cuyas sucursales llevan un solo cupo (columna Cupo total), como Otros; van antes de Otros
@@ -1165,14 +1168,15 @@ async function loginQA(){
   if(!user || !pass){ status.textContent = 'Ingresa usuario y contraseña'; return; }
   btn.textContent = 'Ingresando…'; btn.disabled = true; status.textContent = '';
   try{
-    const pedir = app => fetch(AUTH_URL, {
+    const pedir = a => fetch(a.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain, */*' },
-      body: JSON.stringify({ userName: user, password: pass, codeApplication: app, includeUserInfo: true })
+      body: JSON.stringify({ userName: user, password: pass, codeApplication: a.code, includeUserInfo: true })
     });
-    let res = await pedir(CODE_APP_DM);
-    // Si en QA el usuario no está dado de alta en Data Maestra, se reintenta con AP1 Balanceado.
-    if(res.status === 401) res = await pedir(CODE_APP_AP1);
+    let usada = APPS[0];
+    let res = await pedir(usada);
+    // Si el usuario no está dado de alta en Data Maestra, se reintenta con el login de AP1 Balanceado.
+    if(res.status === 401){ usada = APPS[1]; res = await pedir(usada); }
     // Un 404 sin JSON = el comun/server.py que está corriendo es anterior a la ruta /bff-qa
     if(res.status === 404 && !(res.headers.get('content-type') || '').includes('json')){
       status.textContent = LOCAL
@@ -1194,8 +1198,8 @@ async function loginQA(){
       // QA avisa en data si el rechazo es por 2FA o por clave vencida; sin eso, el mensaje es siempre el mismo.
       if(g(data, 'twoFactorRequired')) status.textContent = 'Tu usuario de QA pide verificación en dos pasos, que esta pantalla no maneja. Entra a Data Maestra QA y pega aquí el token.';
       else if(g(data, 'forceChangePasswordRequired')) status.textContent = 'QA te pide cambiar la contraseña antes de entrar. Hazlo en Data Maestra QA y vuelve aquí.';
-      else if(res.status === 401) status.textContent = 'Usuario o clave incorrecto en QA. Ojo: QA tiene sus propios usuarios, la clave puede no ser la misma que en producción.';
-      else status.textContent = Array.isArray(det) ? det.join(' ') : (msg || `QA respondió HTTP ${res.status}`);
+      else status.textContent = (Array.isArray(det) ? det.join(' ') : (msg || 'No se pudo entrar')) +
+        ` (${usada.nombre}, HTTP ${res.status}${LOCAL ? '' : ', web'})`;
     }
   }catch(e){
     // Desde la web el navegador bloquea el login: qa-gateway no manda cabecera CORS en el preflight.
