@@ -267,10 +267,10 @@ button.tq.pend{ color:var(--muted); border-style:dashed; background:#fcfcfd; }
 // Solo local: las sucursales vienen de D1 (vía comun/server.py en localhost) y los cupos
 // se guardan en localStorage de este equipo. Para compartir: Excel ⇄ Importar.
 // Los tanques salen de Data Maestra QA (structure/fuel_tanks aún no está en producción):
-// comun/server.py reenvía /bff-qa/* a qa-gateway.naturisa.com.ec.
+// comun/server.py (en local) y el worker (en la web) reenvían /bff-qa/* a qa-gateway.naturisa.com.ec.
 const LOCAL = window.location.hostname === 'localhost';
 const WORKER = LOCAL ? '' : 'https://naturisa-proxy.parragajonathan965.workers.dev';
-const QA = '/bff-qa';
+const QA = WORKER + '/bff-qa';
 const AUTH_URL = QA + '/web/ap1/security/api/auth';
 const TANQUES_URL = QA + '/web/datamaestra/backoffice/api/structure/fuel_tanks?status=ACTIVO&status=MANTENIMIENTO' +
   '&includeUsage=true&includeSubsidiary=true&includeWarehouse=true&includeUnitMeasure=true&includeItem=true&PageSize=1000';
