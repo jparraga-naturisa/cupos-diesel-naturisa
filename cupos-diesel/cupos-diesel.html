@@ -1130,7 +1130,9 @@ async function loginQA(){
     });
     // Un 404 sin JSON = el comun/server.py que está corriendo es anterior a la ruta /bff-qa
     if(res.status === 404 && !(res.headers.get('content-type') || '').includes('json')){
-      status.textContent = 'El servidor local está desactualizado: cierra la ventana negra de Cupos de Diesel y vuelve a abrir el acceso directo.';
+      status.textContent = LOCAL
+        ? 'El servidor local está desactualizado: cierra la ventana negra de Cupos de Diesel y vuelve a abrir el acceso directo.'
+        : 'Falta desplegar el worker (ruta /bff-qa). Mientras tanto entra desde localhost:3013, o pega aquí abajo el token.';
       return;
     }
     const json = await res.json().catch(() => ({}));
@@ -1147,7 +1149,10 @@ async function loginQA(){
       status.textContent = Array.isArray(det) ? det.join(' ') : (msg || `QA respondió HTTP ${res.status}`);
     }
   }catch(e){
-    status.textContent = 'Error de conexión: ' + e.message;
+    // Desde la web el navegador bloquea el login: qa-gateway no manda cabecera CORS en el preflight.
+    status.textContent = LOCAL
+      ? 'Error de conexión: ' + e.message
+      : 'Desde la web el ingreso con usuario y contraseña no funciona hasta desplegar el worker. Entra desde localhost:3013, o pega aquí abajo el token.';
   }finally{
     btn.textContent = 'Ingresar'; btn.disabled = false;
   }
