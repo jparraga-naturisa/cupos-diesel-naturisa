@@ -1185,7 +1185,11 @@ async function loginQA(){
     } else {
       const msg = g(json, 'message');
       const det = g(json, 'data');
-      status.textContent = Array.isArray(det) ? det.join(' ') : (msg || `QA respondió HTTP ${res.status}`);
+      // QA avisa en data si el rechazo es por 2FA o por clave vencida; sin eso, el mensaje es siempre el mismo.
+      if(g(data, 'twoFactorRequired')) status.textContent = 'Tu usuario de QA pide verificación en dos pasos, que esta pantalla no maneja. Entra a Data Maestra QA y pega aquí el token.';
+      else if(g(data, 'forceChangePasswordRequired')) status.textContent = 'QA te pide cambiar la contraseña antes de entrar. Hazlo en Data Maestra QA y vuelve aquí.';
+      else if(res.status === 401) status.textContent = 'Usuario o clave incorrecto en QA. Ojo: QA tiene sus propios usuarios, la clave puede no ser la misma que en producción.';
+      else status.textContent = Array.isArray(det) ? det.join(' ') : (msg || `QA respondió HTTP ${res.status}`);
     }
   }catch(e){
     // Desde la web el navegador bloquea el login: qa-gateway no manda cabecera CORS en el preflight.
