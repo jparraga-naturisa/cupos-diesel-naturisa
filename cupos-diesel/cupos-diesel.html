@@ -225,6 +225,7 @@ td.ver:hover{ background:#e8f1fb; box-shadow:inset 0 0 0 1px var(--link-2); bord
     <nav class="nav">
       <div class="nav-tit">Cupos de diésel</div>
       <button data-tab="usos"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg><span>Cupos por uso</span></button>
+      <button data-tab="gas"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M14 20V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v15"/><path d="M3 20h12M6 8h6"/><path d="M18 9v8a1.5 1.5 0 0 0 3 0V8l-3-3"/></svg><span>Gasolina</span></button>
       <button data-tab="tanques"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 22V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M2 22h12M5 10h6"/><path d="M13 10h3a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"/></svg><span>Tanques</span></button>
       <button data-tab="dm"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg><span>Data Maestra</span></button>
     </nav>
@@ -530,7 +531,7 @@ async function cargar(){
   cambiarTab(leer(TAB_KEY, 'usos'));
   pintarEstado();
   // La lista de tanques de cada casilla necesita los tanques de QA
-  if(TAB === 'usos' && tokenQA()) cargarTanques();
+  if((TAB === 'usos' || TAB === 'gas') && tokenQA()) cargarTanques();
 }
 
 function filtradas(){
@@ -540,26 +541,36 @@ function filtradas(){
   return SUCURSALES.filter(s =>
     (!q || norm(s.nombre).includes(q) || (TAB === 'tanques' && tanquesDe(s.id).some(t => norm(t.nombre + ' ' + t.codigo).includes(q)))) &&
     (!cl || s.cluster === cl) &&
-    (!est || (est === 'pend' ? tienePend(s) : (est === 'con') === (totalSuc(s.id) > 0))));
+    (!est || (est === 'pend' ? tienePend(s) : (est === 'con') === (totalVis(s.id) > 0))));
 }
-const tienePend = s => !!TANQUES && (s.unTotal ? [TOT] : USOS.map(u => u.nombre)).some(u => fila(s.id)[u] > 0 && !cuadra(s.id, u));
+// Gasolina tiene su propia pantalla, así que Cupos por uso muestra solo los usos de diésel.
+const GAS = 'Gasolina';
+const VIS = () => TAB === 'gas' ? USOS.filter(u => u.nombre === GAS)
+  : TAB === 'usos' ? USOS.filter(u => u.nombre !== GAS) : USOS;
+const totalVis = id => unTotal(id) ? fila(id)[TOT] || 0 : VIS().reduce((a, u) => a + (fila(id)[u.nombre] || 0), 0);
+const tienePend = s => !!TANQUES && (s.unTotal ? [TOT] : VIS().map(u => u.nombre)).some(u => fila(s.id)[u] > 0 && !cuadra(s.id, u));
 function render(){ TAB === 'tanques' ? renderTanques() : TAB === 'dm' ? renderDM() : renderUsos(); }
 
 // ── Pestaña 1: matriz sucursal × uso ──
 function sumar(lista){
-  const col = USOS.map(u => lista.reduce((a, s) => a + (fila(s.id)[u.nombre] || 0), 0));
-  return { col, tot: lista.reduce((a, s) => a + totalSuc(s.id), 0) };
+  const col = VIS().map(u => lista.reduce((a, s) => a + (fila(s.id)[u.nombre] || 0), 0));
+  return { col, tot: lista.reduce((a, s) => a + totalVis(s.id), 0) };
 }
-const celdasSuma = ({ col, tot }) => col.map(v => `<td class="num">${fmt(v)}</td>`).join('') + `<td class="tot">${fmt(tot)}</td>`;
+// En Gasolina hay una sola columna, así que el total por sucursal sobra.
+const conTot = () => VIS().length > 1;
+const celdasSuma = ({ col, tot }) => col.map(v => `<td class="num">${fmt(v)}</td>`).join('') +
+  (conTot() ? `<td class="tot">${fmt(tot)}</td>` : '<td></td>');
 
 function renderUsos(){
-  document.getElementById('th').innerHTML = `<tr><th>Sucursal</th>` +
-    USOS.map(u => `<th class="uso">${esc(u.nombre)}<span class="u">gal/sem</span></th>`).join('') +
-    `<th class="tot">Cupo total<span class="u">gal/sem</span></th></tr>`;
+  const usos = VIS(), gas = TAB === 'gas';
+  document.getElementById('th').innerHTML = `<tr><th${gas ? ' style="width:300px"' : ''}>Sucursal</th>` +
+    usos.map(u => `<th class="uso"${gas ? ' style="width:240px"' : ''}>${esc(gas ? 'Cupo de gasolina' : u.nombre)}<span class="u">gal/sem</span></th>`).join('') +
+    (conTot() ? `<th class="tot">Cupo total<span class="u">gal/sem</span></th>` : '<th></th>') + `</tr>`;
 
-  const lista = filtradas();
+  // Laboratorios y Otros no reciben gasolina
+  const lista = filtradas().filter(s => !gas || (!s.unTotal && !s.otro));
   if(!lista.length){
-    document.getElementById('tb').innerHTML = `<tr><td colspan="${USOS.length + 2}" class="vacio-msg">No hay sucursales con ese filtro</td></tr>`;
+    document.getElementById('tb').innerHTML = `<tr><td colspan="${usos.length + 2}" class="vacio-msg">No hay sucursales con ese filtro</td></tr>`;
     return;
   }
   let html = '';
@@ -567,17 +578,17 @@ function renderUsos(){
     const f = fila(s.id);
     return `<tr class="fila" data-id="${s.id}"><td class="suc">${esc(s.nombre)}${s.partes ? `<span class="d">${esc(s.partes.join(', '))}</span>` : ''}</td>` +
       (s.unTotal
-        ? USOS.map(() => '<td></td>').join('') +
+        ? usos.map(() => '<td></td>').join('') +
           `<td class="tot"><input class="n${f[TOT] == null ? ' vacio' : ''}" inputmode="decimal" data-i="tot" placeholder="—" value="${f[TOT] ?? ''}">${btnTanque(s, TOT, 'tot')}</td></tr>`
-        : USOS.map((u, i) =>
+        : usos.map((u, i) =>
             `<td><input class="n${f[u.nombre] == null ? ' vacio' : ''}" inputmode="decimal" data-i="${i}" placeholder="—" value="${f[u.nombre] ?? ''}">${btnTanque(s, u.nombre, i)}</td>`).join('') +
-          `<td class="tot">${fmt(totalSuc(s.id))}</td></tr>`);
+          (conTot() ? `<td class="tot">${fmt(totalVis(s.id))}</td>` : '<td></td>') + `</tr>`);
   };
   // Sucursales por orden alfabético, sin agrupar por cluster; Laboratorios y Otros al final
   html += lista.filter(s => !s.unTotal).map(filaDe).join('');
   for(const [titulo, del] of [['Laboratorios', lista.filter(s => s.unTotal && !s.otro)], ['Otros', lista.filter(s => s.otro)]]){
     if(!del.length) continue;
-    html += `<tr class="grupo"><td class="suc">${titulo}</td><td colspan="${USOS.length + 1}"></td></tr>` + del.map(filaDe).join('');
+    html += `<tr class="grupo"><td class="suc">${titulo}</td><td colspan="${usos.length + 1}"></td></tr>` + del.map(filaDe).join('');
   }
   html += `<tr class="total"><td class="suc">Total${lista.length < SUCURSALES.length ? ' (filtro)' : ''}</td>${celdasSuma(sumar(lista))}</tr>`;
   document.getElementById('tb').innerHTML = html;
@@ -666,10 +677,10 @@ function btnTanque(s, uso, dataI){
   return `<button type="button" class="tq${cls}" data-i="${dataI}" title="${esc(tip)}">${esc(txt)}</button>`;
 }
 const pendientesTq = () => SUCURSALES.reduce((a, s) =>
-  a + (s.unTotal ? [TOT] : USOS.map(u => u.nombre)).filter(u => fila(s.id)[u] > 0 && !cuadra(s.id, u)).length, 0);
+  a + (s.unTotal ? [TOT] : VIS().map(u => u.nombre)).filter(u => fila(s.id)[u] > 0 && !cuadra(s.id, u)).length, 0);
 function avisoUsos(){
   pintarPend();
-  if(TAB !== 'usos') return;
+  if(TAB !== 'usos' && TAB !== 'gas') return;
   if(!tokenQA()) return avisar('Para elegir el tanque que recibe cada cupo, ingresa a Data Maestra QA en la pestaña <b>Tanques</b>.');
   if(TANQUES_ERR) return avisar(`No se pudieron traer los tanques: ${esc(TANQUES_ERR)}`);
   if(!TANQUES) return;
@@ -678,7 +689,7 @@ function avisoUsos(){
 // Pastilla con los cupos sin tanque elegido; al tocarla se filtra la matriz
 function pintarPend(){
   const el = document.getElementById('pend');
-  const n = TAB === 'usos' && TANQUES ? pendientesTq() : 0;
+  const n = (TAB === 'usos' || TAB === 'gas') && TANQUES ? pendientesTq() : 0;
   el.hidden = !n;
   if(n) el.textContent = `${n} sin tanque`;
   el.classList.toggle('on', document.getElementById('fEstado').value === 'pend');
@@ -692,7 +703,7 @@ document.getElementById('pend').addEventListener('click', () => {
 // Recalcula totales sin repintar la tabla (no se pierde el foco de la casilla siguiente)
 function actualizarTotales(tr){
   const id = +tr.dataset.id;
-  if(!unTotal(id)) tr.querySelector('td.tot').textContent = fmt(totalSuc(id));
+  if(!unTotal(id) && conTot()) tr.querySelector('td.tot').textContent = fmt(totalVis(id));
   const lista = filtradas();
   const tot = document.querySelector('tr.total');
   tot.innerHTML = `<td class="suc">${tot.firstElementChild.textContent}</td>${celdasSuma(sumar(lista))}`;
@@ -707,7 +718,7 @@ document.getElementById('tb').addEventListener('change', e => {
   const inp = e.target.closest('input.n');
   if(!inp) return;
   const tr = inp.closest('tr.fila');
-  const id = +tr.dataset.id, uso = inp.dataset.i === 'tot' ? TOT : USOS[+inp.dataset.i].nombre;
+  const id = +tr.dataset.id, uso = inp.dataset.i === 'tot' ? TOT : VIS()[+inp.dataset.i].nombre;
   const v = numero(inp.value);
   inp.classList.toggle('err', Number.isNaN(v));
   if(Number.isNaN(v)){ pintarEstado('Solo números (galones)'); return; }
@@ -726,7 +737,7 @@ function refrescarCelda(id, dataI){
   const td = document.querySelector(`tr.fila[data-id="${id}"] input.n[data-i="${dataI}"]`)?.closest('td');
   if(!td) return;
   td.querySelector('button.tq, .sin-tq')?.remove();
-  td.insertAdjacentHTML('beforeend', btnTanque(SUCURSALES.find(x => x.id === id), dataI === 'tot' ? TOT : USOS[+dataI].nombre, dataI));
+  td.insertAdjacentHTML('beforeend', btnTanque(SUCURSALES.find(x => x.id === id), dataI === 'tot' ? TOT : VIS()[+dataI].nombre, dataI));
 }
 
 // ── Panel de tanques de una casilla: se marcan uno o varios; cada uno recibe el cupo completo ──
@@ -737,7 +748,7 @@ document.getElementById('tb').addEventListener('click', e => {
   const b = e.target.closest('button.tq');
   if(!b) return;
   const s = SUCURSALES.find(x => x.id === +b.closest('tr.fila').dataset.id);
-  POP = { s, uso: b.dataset.i === 'tot' ? TOT : USOS[+b.dataset.i].nombre, dataI: b.dataset.i };
+  POP = { s, uso: b.dataset.i === 'tot' ? TOT : VIS()[+b.dataset.i].nombre, dataI: b.dataset.i };
   pintarPop();
   const el = document.getElementById('pop'), rc = b.getBoundingClientRect();
   el.style.left = Math.max(8, Math.min(rc.left, innerWidth - el.offsetWidth - 8)) + 'px';
@@ -851,7 +862,7 @@ function normalizarTanque(t){
 async function cargarTanques(){
   TANQUES_ERR = '';
   if(!tokenQA()){ TANQUES = null; render(); return; }
-  if(TAB !== 'usos') document.getElementById('tb').innerHTML = `<tr><td class="vacio-msg">Trayendo tanques de Data Maestra (QA)…</td></tr>`;
+  if(TAB !== 'usos' && TAB !== 'gas') document.getElementById('tb').innerHTML = `<tr><td class="vacio-msg">Trayendo tanques de Data Maestra (QA)…</td></tr>`;
   else avisar('Trayendo tanques de Data Maestra (QA)…');
   try{
     const r = await fetch(TANQUES_URL, { headers: { Authorization: `Bearer ${tokenQA()}`, Accept: 'application/json' } });
@@ -1282,10 +1293,10 @@ function pintarUsuario(){
 }
 
 function cambiarTab(tab){
-  TAB = ['tanques', 'dm'].includes(tab) ? tab : 'usos';
+  TAB = ['tanques', 'dm', 'gas'].includes(tab) ? tab : 'usos';
   grabar(TAB_KEY, TAB);
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB));
-  const tit = { usos: 'Cupos por uso', tanques: 'Tanques', dm: 'Data Maestra' }[TAB];
+  const tit = { usos: 'Cupos por uso', gas: 'Gasolina', tanques: 'Tanques', dm: 'Data Maestra' }[TAB];
   document.getElementById('titulo').textContent = tit;
   document.getElementById('crumb').textContent = tit;
   avisar('');
