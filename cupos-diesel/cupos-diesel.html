@@ -419,7 +419,10 @@ const usoDe = texto => { const t = norm(texto); return [...USOS, ...OTROS.map(o 
 const fila = id => M.cupos[id] || {};
 const esOtro = id => OTROS.some(o => o.id === id);
 const unTotal = id => esOtro(id) || !!SUCURSALES.find(x => x.id === id)?.unTotal;
-const totalSuc = id => unTotal(id) ? fila(id)[TOT] || 0 : USOS.reduce((a, u) => a + (fila(id)[u.nombre] || 0), 0);
+// Laboratorios y Otros tienen las mismas columnas de rubro que el resto, y además la de Cupo total,
+// para lo que no se quiera detallar; su cupo es la suma de ambas cosas.
+const clavesDe = (s, usos) => s.unTotal ? [...usos.map(u => u.nombre), TOT] : usos.map(u => u.nombre);
+const totalSuc = id => USOS.reduce((a, u) => a + (fila(id)[u.nombre] || 0), 0) + (unTotal(id) ? fila(id)[TOT] || 0 : 0);
 // Lee una propiedad sin importar mayúsculas (QA responde "Data"/"Code", producción "data"/"code")
 const g = (o, ...ks) => {
   if(!o || typeof o !== 'object') return undefined;
@@ -547,8 +550,8 @@ function filtradas(){
 const GAS = 'Gasolina';
 const VIS = () => TAB === 'gas' ? USOS.filter(u => u.nombre === GAS)
   : TAB === 'usos' ? USOS.filter(u => u.nombre !== GAS) : USOS;
-const totalVis = id => unTotal(id) ? fila(id)[TOT] || 0 : VIS().reduce((a, u) => a + (fila(id)[u.nombre] || 0), 0);
-const tienePend = s => !!TANQUES && (s.unTotal ? [TOT] : VIS().map(u => u.nombre)).some(u => fila(s.id)[u] > 0 && !cuadra(s.id, u));
+const totalVis = id => VIS().reduce((a, u) => a + (fila(id)[u.nombre] || 0), 0) + (unTotal(id) ? fila(id)[TOT] || 0 : 0);
+const tienePend = s => !!TANQUES && clavesDe(s, VIS()).some(u => fila(s.id)[u] > 0 && !cuadra(s.id, u));
 function render(){ TAB === 'tanques' ? renderTanques() : TAB === 'dm' ? renderDM() : renderUsos(); }
 
 // ── Pestaña 1: matriz sucursal × uso ──
@@ -577,12 +580,11 @@ function renderUsos(){
   const filaDe = s => {
     const f = fila(s.id);
     return `<tr class="fila" data-id="${s.id}"><td class="suc">${esc(s.nombre)}${s.partes ? `<span class="d">${esc(s.partes.join(', '))}</span>` : ''}</td>` +
+      usos.map((u, i) =>
+        `<td><input class="n${f[u.nombre] == null ? ' vacio' : ''}" inputmode="decimal" data-i="${i}" placeholder="—" value="${f[u.nombre] ?? ''}">${btnTanque(s, u.nombre, i)}</td>`).join('') +
       (s.unTotal
-        ? usos.map(() => '<td></td>').join('') +
-          `<td class="tot"><input class="n${f[TOT] == null ? ' vacio' : ''}" inputmode="decimal" data-i="tot" placeholder="—" value="${f[TOT] ?? ''}">${btnTanque(s, TOT, 'tot')}</td></tr>`
-        : usos.map((u, i) =>
-            `<td><input class="n${f[u.nombre] == null ? ' vacio' : ''}" inputmode="decimal" data-i="${i}" placeholder="—" value="${f[u.nombre] ?? ''}">${btnTanque(s, u.nombre, i)}</td>`).join('') +
-          (conTot() ? `<td class="tot">${fmt(totalVis(s.id))}</td>` : '<td></td>') + `</tr>`);
+        ? `<td class="tot"><input class="n${f[TOT] == null ? ' vacio' : ''}" inputmode="decimal" data-i="tot" placeholder="—" value="${f[TOT] ?? ''}" title="Lo que no se detalla por rubro">${btnTanque(s, TOT, 'tot')}</td></tr>`
+        : (conTot() ? `<td class="tot">${fmt(totalVis(s.id))}</td>` : '<td></td>') + `</tr>`);
   };
   // Sucursales por orden alfabético, sin agrupar por cluster; Laboratorios y Otros al final
   html += lista.filter(s => !s.unTotal).map(filaDe).join('');
@@ -677,7 +679,7 @@ function btnTanque(s, uso, dataI){
   return `<button type="button" class="tq${cls}" data-i="${dataI}" title="${esc(tip)}">${esc(txt)}</button>`;
 }
 const pendientesTq = () => SUCURSALES.reduce((a, s) =>
-  a + (s.unTotal ? [TOT] : VIS().map(u => u.nombre)).filter(u => fila(s.id)[u] > 0 && !cuadra(s.id, u)).length, 0);
+  a + clavesDe(s, VIS()).filter(u => fila(s.id)[u] > 0 && !cuadra(s.id, u)).length, 0);
 function avisoUsos(){
   pintarPend();
   if(TAB !== 'usos' && TAB !== 'gas') return;
@@ -951,7 +953,7 @@ function asignaciones(){
   const porTanque = new Map();   // tanque → { uso: gal, Otros: gal }
   const sinTanque = {};          // sub_id → { uso | Cupo total: gal }
   for(const s of SUCURSALES){
-    for(const u of s.unTotal ? [TOT] : USOS.map(x => x.nombre)){
+    for(const u of clavesDe(s, USOS)){
       const cupo = fila(s.id)[u] || 0;
       if(!cupo) continue;
       const k = s.otro ? 'Otros' : s.unTotal ? LAB : u;
@@ -1003,14 +1005,14 @@ function renderTanques(){
     // aunque esté en varios tanques (cada tanque recibe la cantidad completa).
     const setT = new Set(tqs), cup = {};
     for(const s2 of SUCURSALES){
-      for(const u of s2.unTotal ? [TOT] : USOS.map(x => x.nombre)){
+      for(const u of clavesDe(s2, USOS)){
         const cupo = fila(s2.id)[u] || 0;
         const dest = destinosDe(s2.id, u).filter(d => setT.has(d.t));
         if(!cupo || !dest.length) continue;
         const k = s2.otro ? s2.nombre : s2.unTotal ? LAB : u;
         cup[k] = (cup[k] || 0) + cupo;
         // Para el modal: de quién es cada galón que entra a los tanques de este campamento
-        (DETALLE[`${s.id}|${k}`] ||= []).push({ suc: s2.nombre, uso: s2.unTotal || s2.otro ? TOT : u, gal: cupo,
+        (DETALLE[`${s.id}|${k}`] ||= []).push({ suc: s2.nombre, uso: u, gal: cupo,
           tqs: dest.map(d => d.t.nombre || d.t.codigo) });
       }
     }
@@ -1315,7 +1317,7 @@ document.getElementById('excelBtn').addEventListener('click', () => {
   const filas = SUCURSALES.map(s => {
     const f = fila(s.id), o = { 'Sub ID': s.id, 'Unidad': s.codigo, 'Cluster': s.cluster, 'Sucursal': s.nombre };
     const tq = u => destinosDe(s.id, u).map(d => `${nombreTq(d.t, s)}: ${d.gal}`).join('; ');
-    USOS.forEach(u => { o[colUso(u)] = s.unTotal ? '' : f[u.nombre] ?? ''; o[`${u.nombre} · tanque`] = s.unTotal ? '' : tq(u.nombre); });
+    USOS.forEach(u => { o[colUso(u)] = f[u.nombre] ?? ''; o[`${u.nombre} · tanque`] = tq(u.nombre); });
     o['Cupo total (gal/sem)'] = totalSuc(s.id);
     o['Cupo total · tanque'] = s.unTotal ? tq(TOT) : '';
     return o;
