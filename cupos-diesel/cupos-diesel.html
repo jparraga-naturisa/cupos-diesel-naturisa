@@ -387,6 +387,23 @@ function dividirAquanaturisa(){
 }
 // Los cupos van en galones enteros. Matrices guardadas con decimales: Aquanaturisa se vuelve a dividir
 // (si sus 3 campamentos siguen sumando el AL-FI) y el resto se redondea.
+// Laboratorios y Otros ya tienen columnas de rubro, así que el Cupo total suelto que traían se pasa a un
+// rubro para que siga a la vista y se pueda editar: los laboratorios a Bombeo y las filas de Otros a
+// Maquinaria. Se puede mover a mano; el valor anterior queda en Respaldos.
+function rubrosLabOtros(){
+  for(const s of SUCURSALES){
+    if(!s.unTotal) continue;
+    const gal = fila(s.id)[TOT];
+    if(!(gal > 0)){ delete M.cupos[s.id]?.[TOT]; continue; }
+    const rubro = s.otro ? 'Maquinaria' : 'Bombeo';
+    (M.cupos[s.id] ??= {})[rubro] = (M.cupos[s.id][rubro] || 0) + gal;
+    const tq = M.tanque[claveTq(s.id, TOT)];
+    if(tq && !M.tanque[claveTq(s.id, rubro)]) M.tanque[claveTq(s.id, rubro)] = tq;
+    delete M.cupos[s.id][TOT];
+    delete M.tanque[claveTq(s.id, TOT)];
+  }
+  M.rubros = true;
+}
 function galonesEnteros(){
   for(const [uso, gal] of Object.entries(ALFI)){
     const vals = CAMPAMENTOS_AQUA.map(id => fila(id)[uso]);
@@ -529,6 +546,7 @@ async function cargar(){
   SUCURSALES = lista.map(s => UN_TOTAL.includes(s.cluster) ? { ...s, unTotal: true } : s)
     .sort((a, b) => !!a.unTotal - !!b.unTotal || a.nombre.localeCompare(b.nombre))
     .concat(OTROS.map(o => ({ id: o.id, codigo: '', nombre: o.nombre, cluster: 'Otros', miembros: [], codigos: [], otro: true, unTotal: true })));
+  if(!M.rubros){ rubrosLabOtros(); guardarLocal(); }
   document.getElementById('fCluster').innerHTML = '<option value="">Todos los clusters</option>' +
     [...new Set(SUCURSALES.map(s => s.cluster))].map(c => `<option>${esc(c)}</option>`).join('');
   cambiarTab(leer(TAB_KEY, 'usos'));
@@ -582,9 +600,7 @@ function renderUsos(){
     return `<tr class="fila" data-id="${s.id}"><td class="suc">${esc(s.nombre)}${s.partes ? `<span class="d">${esc(s.partes.join(', '))}</span>` : ''}</td>` +
       usos.map((u, i) =>
         `<td><input class="n${f[u.nombre] == null ? ' vacio' : ''}" inputmode="decimal" data-i="${i}" placeholder="—" value="${f[u.nombre] ?? ''}">${btnTanque(s, u.nombre, i)}</td>`).join('') +
-      (s.unTotal
-        ? `<td class="tot"><input class="n${f[TOT] == null ? ' vacio' : ''}" inputmode="decimal" data-i="tot" placeholder="—" value="${f[TOT] ?? ''}" title="Lo que no se detalla por rubro">${btnTanque(s, TOT, 'tot')}</td></tr>`
-        : (conTot() ? `<td class="tot">${fmt(totalVis(s.id))}</td>` : '<td></td>') + `</tr>`);
+      (conTot() ? `<td class="tot">${fmt(totalVis(s.id))}</td>` : '<td></td>') + `</tr>`;
   };
   // Sucursales por orden alfabético, sin agrupar por cluster; Laboratorios y Otros al final
   html += lista.filter(s => !s.unTotal).map(filaDe).join('');
@@ -705,7 +721,7 @@ document.getElementById('pend').addEventListener('click', () => {
 // Recalcula totales sin repintar la tabla (no se pierde el foco de la casilla siguiente)
 function actualizarTotales(tr){
   const id = +tr.dataset.id;
-  if(!unTotal(id) && conTot()) tr.querySelector('td.tot').textContent = fmt(totalVis(id));
+  if(conTot()) tr.querySelector('td.tot').textContent = fmt(totalVis(id));
   const lista = filtradas();
   const tot = document.querySelector('tr.total');
   tot.innerHTML = `<td class="suc">${tot.firstElementChild.textContent}</td>${celdasSuma(sumar(lista))}`;
