@@ -6,11 +6,14 @@ de Data Maestra los recibe.
 
 ## Secciones
 
-- **Cupos por uso** — matriz sucursal × uso con el cupo semanal en galones enteros, editable como en Excel
+- **Cupo diésel** — matriz sucursal × uso con el cupo semanal en galones enteros, editable como en Excel
   (Enter baja a la siguiente sucursal). En cada celda se elige el tanque que recibe ese cupo; cada tanque
   marcado recibe la cantidad completa, no se reparte. Laboratorios y el grupo Otros llevan un solo cupo total.
+- **Cupo gasolina** — la misma matriz con una sola columna. No salen Laboratorios ni Otros, que no reciben
+  gasolina, y el selector solo ofrece tanques de gasolina.
 - **Tanques** — el mismo reparto visto por tanque, agrupado por campamento. La fila del campamento suma los
-  cupos asignados a sus tanques sin duplicar cuando un cupo está en varios.
+  cupos asignados a sus tanques sin duplicar cuando un cupo está en varios. Al pulsar uno de esos números se abre
+  el detalle de qué sucursal viene cada galón y en cuál de los tanques lo recibe.
 - **Data Maestra › Tanques** — la tabla de tanques tal como está en Data Maestra (QA), con uso, combustible y
   "recibe" editables. Las correcciones son locales: no tocan QA.
 - **Data Maestra › Campamentos** — en qué tanques recibe cada campamento el diésel y la gasolina. Por defecto
